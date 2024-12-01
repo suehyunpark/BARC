@@ -1,2 +1,9 @@
 # Ignore pycache stuff
 __pycache__/
+*.jsonl
+*.json
+finetune/alignment-handbook/suehyunpark
+induction_samples
+results
+reward_distributions
+diff_output

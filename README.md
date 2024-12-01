@@ -124,6 +124,14 @@ huggingface-cli login
 wandb login
 ```
 
+```
+export TRITON_CACHE_DIR=/tmp/triton_cache
+export TMPDIR=/tmp
+export WANDB_ENTITY="suehyun"
+export WANDB_PROJECT="arc-improve"
+pip install liger-kernel==0.4.0  # 0.4.1 version shows AttributeError: 'LlamaRMSNorm' object has no attribute 'in_place'
+```
+
 Run finetune command, you can change `num_processes` to the gpus you have.
 
 ```
