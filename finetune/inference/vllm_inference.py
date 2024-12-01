@@ -1,12 +1,23 @@
+import sys
 import time
+from argparse import ArgumentParser
+import torch
+
+parser = ArgumentParser()
+parser.add_argument("--model", type=str, default="barc0/Llama-3.1-ARC-Potpourri-Induction-8B", help="Model to use")
+parser.add_argument("--problem_file", type=str, default="./problems/arc_problems_train_240_extra_newline_v2.jsonl", help="Problem file to use")
+parser.add_argument("--num_of_samples_per_problem", type=int, default=128, help="Number of samples per problem")
+args = parser.parse_args()
+
 # BASE_MODEL = "mistralai/Codestral-22B-v0.1"
 # LORA_DIR = "data/barc-codestral-sft-qlora-v0.0.3-epoch3"
 
 TEMPERATURE = 0.8
+BASE_MODEL = "barc0/Llama-3.1-ARC-Potpourri-Induction-8B"
 # BASE_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 # BASE_MODEL = "./barc-llama3.1-8b-instruct-lora64-induction-gpt4-desc-llama-20k_lr2e-4_epoch3_merged"
 # BASE_MODEL = "./barc-llama3.1-8b-instruct-lora64-induction-gpt4-desc-4omini20k_lr2e-4_epoch3_merged"
-BASE_MODEL = "./barc-llama3.1-8b-instruct-lora64-induction-gpt4mini20k-llama20k_lr2e-4_epoch3_merged"
+# BASE_MODEL = "./barc-llama3.1-8b-instruct-lora64-induction-gpt4mini20k-llama20k_lr2e-4_epoch3_merged"
 # BASE_MODEL = "barc0/barc-llama3.1-8b-instruct-fft-sft-induction35k_lr1e-5_epoch2"
 # BASE_MODEL = "data/barc-llama3.1-8b-instruct-fft-induction_gpt4omini100k_lr1e-5_epoch2"
 # LORA_DIR = "data/barc-llama3.1-8b-instruct-sft-qlora-v0.0.3"
@@ -19,10 +30,12 @@ BASE_MODEL = "./barc-llama3.1-8b-instruct-lora64-induction-gpt4mini20k-llama20k_
 LORA_DIR = None
 # LORA_DIR = "barc0/barc-llama3.1-8b-instruct-lora64-induction-gpt4omini35k_lr2e-4_epoch3"
 
+BASE_MODEL = args.model
 
 BATCH_SIZE = 16
-num_of_samples_per_problem = 64
-TENSOR_PARALLEL = 1
+num_of_samples_per_problem = args.num_of_samples_per_problem
+TENSOR_PARALLEL = torch.cuda.device_count()
+print(f"Using {TENSOR_PARALLEL} GPUs")
 
 
 from transformers import AutoTokenizer
@@ -41,7 +54,12 @@ data = []
 # problem_file = "./arc_problems_selected-train-subset50_50_extra_newline.jsonl"
 # problem_file = "./arc_problems_train_327_extra_newline.jsonl"
 # problem_file = "./arc_problems_validation_400_extra_newline.jsonl"
-problem_file = "./arc_problems_validation_400_extra_newline_v2.jsonl"
+# problem_file = "./problems/arc_problems_train_160_extra_newline_v2.jsonl"
+problem_file = "./problems/arc_problems_train_240_extra_newline_v2.jsonl"
+# problem_file = "./problems/arc_problems_re_arc_240_extra_newline_v2.jsonl"
+# problem_file = "./arc_problems_validation_400_extra_newline_v2.jsonl"
+
+problem_file = args.problem_file
 
 with open(problem_file) as f:
     for line in f:
@@ -70,6 +88,8 @@ time.sleep(5)
 from tqdm import tqdm
 all_responses = []
 for d in tqdm(data):
+    # if d["uid"] != "3631a71a":
+    #     continue
     messages = d["messages"]
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"
@@ -83,9 +103,9 @@ for d in tqdm(data):
     ], tokenize=True, add_generation_prompt=True)
     # print(inputs)
     print(f"Number of tokens: {len(input_tokens)}")
-    if len(input_tokens) > 8000:
-        print("skip!!!!!")
-        continue
+    # if len(input_tokens) > 8000:  # NOTE: train 3631a71a has 8575 tokens
+    #     print("skip!!!!!")
+    #     continue
 
     assert num_of_samples_per_problem % BATCH_SIZE == 0
     if  len(input_tokens) < 1750:
@@ -127,14 +147,13 @@ for d in tqdm(data):
     for outputs in aggregate_outputs:
         for output in outputs:
             prompt = output.prompt
-            print(f"Prompt: {prompt!r}")
+            # print(f"Prompt: {prompt!r}")
             for i in range(len(output.outputs)):
                 generated_text = output.outputs[i].text
                 # print(f"Generated text: {generated_text!r}\n")
                 responses.append(generated_text)
 
     all_responses.append({"uid": d["uid"], "prompt":inputs , "responses": responses, "base_model": BASE_MODEL, "lora_dir": LORA_DIR})
-
     with open(saving_file, "w") as f:
         f.write("\n".join(json.dumps(p) for p in all_responses))
 
