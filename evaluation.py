@@ -2,11 +2,11 @@ from tqdm import tqdm
 import orjsonl
 import os
 from collections import Counter
-from datasets import load_dataset
 from arc import validation_problems
 
 # We provide the samples and execution results on Huggingface. Please check README.md to see the links.
-INDUCTION_SAMPLE_EXEC_RESULTS_DIR = "induction_sample_exeuction_results/ARC-Potpourri/"
+INDUCTION_SAMPLE_EXEC_RESULTS_DIR = "induction_samples"
+# INDUCTION_SAMPLE_EXEC_RESULTS_DIR = "induction_sample_exeuction_results/ARC-Potpourri/"
 TRANSDUCTION_SAMPLE_FILE = "transduction_experimental_results/evaluation_dataset_results/Llama-3.1-ARC-Potpourri-Transduction-8B-test-time-finetune.jsonl"
 
 def grid_2d_to_tuple(grid):
@@ -39,10 +39,7 @@ def color_grid_to_int_grid(grid_str):
     grid = [[color_to_number(cell) for cell in row] for row in grid]
     return grid
 
-def main():
-    # load all the jonsl files in the directory
-    # use orjsonl for faster loading
-
+def get_transduction_submission(uid_to_problem):
     # load transduction results
     transduction_responses = orjsonl.load(path=TRANSDUCTION_SAMPLE_FILE)
 
@@ -55,7 +52,6 @@ def main():
             test_input_to_uid_test_idx[test_input] = (p.uid, test_idx)
 
     # convert string color back to int
-    uid_to_problem = {p.uid:p for p in validation_problems}
     transduction_pass_at_2_counter = 0.0
     transduction_submission = {p.uid:[] for p in validation_problems}
     for r in transduction_responses:
@@ -84,7 +80,9 @@ def main():
         transduction_submission[uid][test_idx] = top2
             
     print(f"Transduction pass@2: {transduction_pass_at_2_counter}/{len(validation_problems)} = {transduction_pass_at_2_counter/len(validation_problems)}")
-    
+    return transduction_submission
+
+def get_induction_submission(uid_to_problem):
     # get all the jsonl files in the directory
     jsonl_files = [f for f in os.listdir(INDUCTION_SAMPLE_EXEC_RESULTS_DIR) if f.endswith(".jsonl")]
     all_data = []
@@ -132,7 +130,9 @@ def main():
             
 
     print(f"Induction pass@2: {induction_pass_at_2_counter}/{len(validation_problems)} = {induction_pass_at_2_counter/len(validation_problems)}")
+    return induction_submission
 
+def get_ensemble_submission(uid_to_problem, transduction_submission, induction_submission):
     # ensemble both results
     # use induction when available, otherwise use transduction
 
@@ -155,6 +155,15 @@ def main():
                 ensemble_pass_at_2_counter += 1.0/len(uid_to_problem[uid].test_pairs) 
 
     print(f"Ensemble pass@2: {ensemble_pass_at_2_counter}/{len(validation_problems)} = {ensemble_pass_at_2_counter/len(validation_problems)}")
+    return ensemble_submission
+
+def main():
+    uid_to_problem = {p.uid:p for p in validation_problems}
+    # load all the jonsl files in the directory
+    # use orjsonl for faster loading
+    # transduction_submission = get_transduction_submission(uid_to_problem)
+    induction_submission = get_induction_submission(uid_to_problem)  # 152.5/400 = 0.38125
+    # ensemble_submission = get_ensemble_submission(uid_to_problem, transduction_submission, induction_submission)
 
 if __name__ == "__main__":
     main()
