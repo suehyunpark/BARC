@@ -37,7 +37,9 @@ def generate_input():
 🤗[[Synthetic Dataset]](https://huggingface.co/collections/barc0/synthetic-arc-dataset-6725aa6031376d3bacc34f76)
 🤗[[Synthetic Dataset in Instruction Format]](https://huggingface.co/collections/barc0/synthetic-arc-dataset-prompt-formatted-67223d0e7c232af8ed782b37)
 
-Visualization examples of our synthetic dataset: 🎊[[BARC Dataset Examples]](https://naiimic.github.io/content/arc/examples.html)
+Visualization examples of our synthetic dataset: 🎊[[BARC Dataset Examples]](https://www.basis.ai/arc_interface/examples) visualized by [Michi](https://naiimic.github.io/) from [Basis](https://www.basis.ai/our-work/) 
+
+
 
 The synthetic data generation pipeline takes the seed problems and remixes them using LLM to generate new problems. Each generated problem includes both a solution (transformation function) and input generator, which are executed to create input/output grid pairs forming an ARC problem.
 
@@ -150,8 +152,24 @@ We provide inference samples
 
 - Transduction output original results for evaluation dataset and ConceptARC dataset 🤗[[Samples]](https://huggingface.co/datasets/barc0/transduction_experimental_results)
 
-- Transduction output examples visualization: 🎊 [[Visualization]](https://naiimic.github.io/content/arc/arc.html) by [Michi](https://naiimic.github.io/) from [basis](https://www.basis.ai/our-work/)
+- Transduction and induction output examples visualization: 🎊 [[Visualization]](https://www.basis.ai/arc_interface/arc) visualized by [Michi](https://naiimic.github.io/) from [Basis](https://www.basis.ai/our-work/)
 
 ### Evaluation
 We provide an example script (`evaluation.py`) that scores inference samples and execution results. The script also demonstrates how we ensemble two models and calculate the scores.
 (requires `pip install -r requirements.txt`)
+
+### Citation
+
+If you find our method, models, and dataset helpful, please kindly cite our paper :)
+
+```
+@misc{li2024combininginductiontransductionabstract,
+      title={Combining Induction and Transduction for Abstract Reasoning}, 
+      author={Wen-Ding Li and Keya Hu and Carter Larsen and Yuqing Wu and Simon Alford and Caleb Woo and Spencer M. Dunn and Hao Tang and Michelangelo Naim and Dat Nguyen and Wei-Long Zheng and Zenna Tavares and Yewen Pu and Kevin Ellis},
+      year={2024},
+      eprint={2411.02272},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2411.02272}, 
+}
+```
