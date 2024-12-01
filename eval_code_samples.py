@@ -1,6 +1,7 @@
 import os
 import traceback
 import sys
+from typing import List
 
 def trace_calls(frame, event, arg):
     if event != 'call':
@@ -30,7 +31,7 @@ from arc import train_problems, validation_problems
 import argparse
 import os
 
-from arc.read import parse_dir
+from arc.read import parse_dir, parse_group
 def get_concept_arc_problems():
     problems = []
     for problem_directory in os.listdir("ConceptARC"):
@@ -51,6 +52,48 @@ for problem in concept_arc_problems:
         new_problems.append(new_problem)
     assert len(problem.test_pairs) == 3, f"Problem {problem.uid} has {len(problem.test_pairs)} test pairs"
 concept_arc_problems = new_problems
+
+
+def parse_dir_jsonl(d) -> List[ArcProblem]:
+    random.seed(0)
+    cases = []
+    for file in os.listdir(d):
+        path = os.path.join(d, file)
+        data = []
+        with open(path) as f:
+            for line in f:
+                parsed = json.loads(line)
+                # uid = parsed["name"].replace(".jsonl", "")
+                id = parsed["id"]
+                if "orig" in id:
+                    continue
+                data.append(parsed)
+        
+        samples = random.sample(data, 1) 
+        for parsed in samples:
+            id = parsed["id"]
+            train = parsed["train"]
+            demo_pairs = parse_group(train)
+
+            test = parsed["test"]
+            test_pairs = parse_group(test)
+            cases.append(
+                ArcProblem(
+                    train_pairs=demo_pairs,
+                    test_pairs=test_pairs,
+                    uid=id,
+                )
+            )
+    return cases
+
+def get_re_arc_problems():
+    problems = []
+    problem_dir = "/mnt/nas/suehyun/ARC/dataset/ARC_RE-ARC_interleaved/seed-42_sample-10"
+    problems.extend(parse_dir_jsonl(problem_dir))
+    
+    return problems
+
+re_arc_problems = get_re_arc_problems()
 
 TRANSPOSE = False
 
@@ -85,7 +128,7 @@ def compare_grids(output_grid, expected_output_grid):
     return GridComparisonResult.CONTENT_MISMATCH, ratio
 
 
-def validate(arc_problem, code):
+def validate(arc_problem, code, timeout=5):
     failure = False
 
     return_output_grids = []
@@ -107,7 +150,7 @@ def validate(arc_problem, code):
             expected_output_grid = train_pair.y
 
         try:
-            output_grids = multi_execute_transformation([code], [input_grid], random_seeds=[0], timeout=2, 
+            output_grids = multi_execute_transformation([code], [input_grid], random_seeds=[0], timeout=timeout, 
                                                         function_name="transform", num_workers=32)
             output_grid = output_grids[0]
         except KeyboardInterrupt:
@@ -120,11 +163,11 @@ def validate(arc_problem, code):
         comparison_result, ratio = compare_grids(output_grid, expected_output_grid)
         
         if isinstance(output_grid, np.ndarray):
-            return_output_grids.append(output_grid.tolist())
+            return_output_grids.append(output_grid.astype(int).tolist())
         else:
             return_output_grids.append(output_grid)
 
-        return_output_grids.append(output_grid.tolist())
+        # return_output_grids.append(output_grid.tolist())
 
         if comparison_result != GridComparisonResult.EQUAL:
             failure = True
@@ -145,26 +188,32 @@ def validate(arc_problem, code):
 
     return (train_verdict, not failure, return_output_grids)
 
-def multi_validate(arc_problem, codes):
+def multi_validate(arc_problem, codes, timeout=5, num_workers=64):
 
     # first execute the first input for each code to filter, leave only the correct ones
     
     results = [list() for _ in range(len(codes))]
+    return_output_grids = [list() for _ in range(len(codes))]
     pairs = arc_problem.train_pairs + arc_problem.test_pairs
     for pair_idx in range(len(pairs)):
         input_grid = pairs[pair_idx].x
         try:
             output_grids = multi_execute_transformation(codes, [input_grid]*len(codes), random_seeds=[0]*len(codes),
-                                                        timeout=2, function_name="transform", num_workers=64)
+                                                        timeout=timeout, function_name="transform", num_workers=num_workers)
         except KeyboardInterrupt:
             exit()
 
         assert len(output_grids) == len(codes)
+        assert len(results) == len(codes)
         
         for code_idx, output_grid in enumerate(output_grids):
             # compare
             try:
                 comparison_result, ratio = compare_grids(output_grid, pairs[pair_idx].y)
+                if isinstance(output_grid, np.ndarray):
+                    return_output_grids[code_idx].append(output_grid.astype(int).tolist())
+                else:
+                    return_output_grids[code_idx].append(output_grid)
             except:
                 breakpoint()
             if comparison_result == GridComparisonResult.EQUAL:
@@ -176,44 +225,8 @@ def multi_validate(arc_problem, codes):
             else:
                 results[code_idx].append((None, 0.0))
 
-        assert len(results) == len(codes)
 
-    return results
-
-def multi_validate2(arc_problem, codes):
-
-    # do all inputs all together
-    
-    results = [list() for _ in range(len(codes))]
-    pairs = arc_problem.train_pairs + arc_problem.test_pairs
-    for pair_idx in range(len(pairs)):
-        input_grid = pairs[pair_idx].x
-        try:
-            output_grids = multi_execute_transformation(codes, [input_grid]*len(codes), random_seeds=[0]*len(codes),
-                                                        timeout=2, function_name="transform", num_workers=64)
-        except KeyboardInterrupt:
-            exit()
-
-        assert len(output_grids) == len(codes)
-        
-        for code_idx, output_grid in enumerate(output_grids):
-            # compare
-            try:
-                comparison_result, ratio = compare_grids(output_grid, pairs[pair_idx].y)
-            except:
-                breakpoint()
-            if comparison_result == GridComparisonResult.EQUAL:
-                results[code_idx].append((comparison_result == GridComparisonResult.EQUAL, ratio))
-            elif comparison_result == GridComparisonResult.SHAPE_MISMATCH:
-                results[code_idx].append((comparison_result == GridComparisonResult.EQUAL, ratio))
-            elif comparison_result == GridComparisonResult.CONTENT_MISMATCH:
-                results[code_idx].append((comparison_result == GridComparisonResult.EQUAL, ratio))
-            else:
-                results[code_idx].append((None, 0.0))
-
-        assert len(results) == len(codes)
-
-    return results
+    return results, return_output_grids
 
 
 def get_arc_problem(uid):
@@ -222,6 +235,9 @@ def get_arc_problem(uid):
             return problem
     assert False, f"Problem {uid} not found"
     # return None
+    
+
+    
 
 def main():
     # answer_file = "answers_ft_gpt-4o-mini-2024-07-18_ellislab_llama2000-seeds_9qjZpfTA_train.jsonl"
@@ -229,6 +245,8 @@ def main():
     # answer_file = "answers_ft_gpt-4o-mini-2024-07-18_ellislab_llama3000-seeds_9qs7cbH2_train.jsonl"
     parser = argparse.ArgumentParser()
     parser.add_argument("--answer_file", help="Path to the answer file")
+    parser.add_argument("--timeout", help="Timeout for execution", type=int, default=8)
+    parser.add_argument("--num_workers", help="Number of workers for execution", type=int, default=8)
     args = parser.parse_args()
     # answer_file = "./finetune/alignment-handbook/arc_problems_train_334_responses_0816013840.jsonl"
     answer_file = args.answer_file
@@ -236,7 +254,7 @@ def main():
         problem_answers = [json.loads(line) for line in f]
 
     os.makedirs("results", exist_ok=True)
-    saving_file = answer_file.replace(".jsonl", "_exec_results_v4.jsonl")
+    saving_file = answer_file.replace(".jsonl", f"_timeout-{args.timeout}_exec_results_v4.jsonl")
     # get just the filename
     import pathlib
     saving_file = pathlib.Path(saving_file).name 
@@ -273,7 +291,7 @@ def main():
                 train_verdict = False
                 train_test_verdict = False
                 try:
-                    train_verdict, train_test_verdict, output_grids = validate(arc_problem, code)
+                    train_verdict, train_test_verdict, output_grids = validate(arc_problem, code, timeout=args.timeout)
                 except KeyboardInterrupt:
                     exit()
                 except Exception as e:
@@ -284,8 +302,8 @@ def main():
                 train_test_verdicts.append(train_test_verdict)
                 all_output_grids.append(output_grids)
         else:
-            results = multi_validate(arc_problem, codes)
-            for idx, result in enumerate(results):
+            results, output_grids = multi_validate(arc_problem, codes, timeout=args.timeout)
+            for idx, (result, output_grid) in enumerate(zip(results, output_grids)):
                 assert len(result) == len(arc_problem.train_pairs + arc_problem.test_pairs)
                 train_verdict = all([verdict for verdict, _ in result[:len(arc_problem.train_pairs)]])
                 train_verdicts.append(train_verdict)
@@ -295,7 +313,7 @@ def main():
                 min_ratio = min([ratio for _, ratio in result])
                 icon = "[+]" if train_verdict else "[ ]"
                 print(f"    {icon} Code {idx}: {train_test_verdict}, max_ratio: {max_ratio}, min_ratio: {min_ratio}")
-                all_output_grids.append(None)
+                all_output_grids.append(output_grid)
                 verdicts_per_example = [verdict for verdict, _ in result]
                 verdicts_per_example_per_sample.append(verdicts_per_example)
 
@@ -303,7 +321,7 @@ def main():
 
         problem_answers[problem_idx]["train_verdicts"] = train_verdicts
         problem_answers[problem_idx]["train_test_verdicts"] = train_test_verdicts
-        problem_answers[problem_idx]["output_grids"] = [] # all_output_grids
+        problem_answers[problem_idx]["output_grids"] = all_output_grids
         problem_answers[problem_idx]["verdicts_per_examples"] = verdicts_per_example_per_sample
         # print(f"Train verdicts: {train_verdicts}, sum: {sum(train_verdicts)}")
         # print(f"Train test verdicts: {train_test_verdicts}, sum: {sum(train_test_verdicts)}")
@@ -313,6 +331,11 @@ def main():
 
         print(f"Accepted: {accepted}/{problem_idx+1}")
 
+        if problem_idx % 10 == 0:
+            print(f"Savings to {saving_file}")
+            with open(saving_file, "w") as f:
+                f.write("\n".join(json.dumps(p) for p in problem_answers))
+            
     print(f"Accepted: {accepted}/{len(problem_answers)}")
     # with open("correct_codes.json", "w") as f:
     #     f.write(json.dumps(correct_codes))
